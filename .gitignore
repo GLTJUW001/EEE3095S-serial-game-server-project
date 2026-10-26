@@ -1,6 +1,24 @@
+# Python
 __pycache__/
-.pytest_cache/
 *.pyc
-results.txt
+.pytest_cache/
+.venv/
+venv/
+
+# Firmware build output (rebuilt from source)
 firmware/build/
+firmware/Debug/
+firmware/Release/
+*.o
+*.d
+
+# Host simulation binary (built from hostsim/fw_host.c)
+hostsim/fw_host
+hostsim/fw_host.exe
+
+# macOS, editors, IDE workspace
 .DS_Store
+__MACOSX/
+.vscode/
+.idea/
+.metadata/
