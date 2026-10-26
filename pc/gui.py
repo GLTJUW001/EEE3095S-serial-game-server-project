@@ -85,6 +85,12 @@ class App:
 
         actions = tk.Frame(self.root)
         actions.pack(**pad)
+        tk.Label(actions, text="Mode:").pack(side="left", padx=(0, 4))
+        self.game_mode_var = tk.StringVar(value="Two players")
+        self.game_mode_box = ttk.Combobox(
+            actions, textvariable=self.game_mode_var,
+            values=("Two players", "Vs computer"), state="readonly", width=13)
+        self.game_mode_box.pack(side="left", padx=4)
         self.new_btn = tk.Button(actions, text="New Game", width=12, command=self.on_new)
         self.new_btn.pack(side="left", padx=4)
         self.resign_btn = tk.Button(actions, text="Resign", width=12, command=self.on_resign)
@@ -93,6 +99,10 @@ class App:
         if self.fake:
             self.sim_btn = tk.Button(actions, text="Press SW0 (sim)", command=self.on_sim_button)
             self.sim_btn.pack(side="left", padx=4)
+
+        tk.Label(self.root, text="Move history:", anchor="w").pack(fill="x", padx=12)
+        self.history_box = tk.Listbox(self.root, height=4, width=48, font=("Consolas", 10))
+        self.history_box.pack(fill="x", padx=12, pady=(0, 6))
 
         tk.Label(self.root, text="Messages with the board:", anchor="w").pack(fill="x", padx=12)
         self.log = tk.Text(self.root, height=8, width=48, font=("Consolas", 9), state="disabled")
@@ -121,7 +131,12 @@ class App:
         self.port_box.config(state="disabled" if connected or self.fake else "normal")
         self.refresh_btn.config(state="disabled" if connected or self.fake else "normal")
         self.new_btn.config(state="normal" if connected else "disabled")
-        self.resign_btn.config(state="normal" if connected else "disabled")
+        self.game_mode_box.config(state="readonly" if connected and c.mode != "PLAYING" else "disabled")
+        self.resign_btn.config(state="normal" if connected and c.mode == "PLAYING" else "disabled")
+        self.history_box.delete(0, "end")
+        for number, (mark, cell) in enumerate(c.history, start=1):
+            player = "Computer" if c.vs_ai and mark == "O" else mark
+            self.history_box.insert("end", "%d. %s -> cell %d" % (number, player, cell))
         if self.sim_btn is not None:
             self.sim_btn.config(state="normal" if connected else "disabled")
 
@@ -177,7 +192,8 @@ class App:
         self.refresh()
 
     def on_new(self):
-        self.client.new_game()
+        vs_ai = self.game_mode_var.get() == "Vs computer"
+        self.client.new_game(vs_ai=vs_ai)
         self.refresh()
 
     def on_resign(self):

@@ -5,6 +5,23 @@
 #include <string.h>
 
 static srv_state_t state = SRV_IDLE;
+static bool     vs_ai;                  /* true: computer plays O */
+static uint32_t rng = 2463534242u;      /* xorshift32 state, never 0 */
+
+static uint32_t rng_next(void)
+{
+    rng ^= rng << 13;
+    rng ^= rng >> 17;
+    rng ^= rng << 5;
+    return rng;
+}
+
+/* Called once per received frame. Human timing is the entropy source. */
+void server_set_time(uint32_t now_ms)
+{
+    rng ^= now_ms * 2654435761u;
+    if (rng == 0u) rng = 1u;
+}
 
 /* Every reply goes through here: concatenate NULL-terminated parts, send. */
 static void send_cat(const char *first, ...)
@@ -28,6 +45,7 @@ void server_init(void)
 {
     game_reset();
     state = SRV_IDLE;
+    vs_ai = false;
 }
 
 srv_state_t server_state(void) { return state; }
@@ -36,6 +54,7 @@ void server_button_reset(void)
 {
     game_reset();
     state = SRV_IDLE;
+    vs_ai = false;
     uart_send_line("EVT:RESET");
 }
 
@@ -87,19 +106,34 @@ static void handle_move(const char *args)
     case G_OK:       break;
     }
 
+    /* Computer opponent: if the human's move did not end the game, the
+     * server chooses a random empty cell and plays it through the same
+     * game_move() validation. The reply then carries a ":AI:<cell>" suffix. */
+    char ai_cell[2] = {0, 0};
+    const char *ai_tag = "";
+    if (vs_ai && game_status() == GS_PLAY)
+    {
+        int ai = game_ai_choose(rng_next());
+        if (ai >= 0 && game_move(0, ai) == G_OK)
+        {
+            ai_cell[0] = (char)('0' + ai);
+            ai_tag = ":AI:";
+        }
+    }
+
     switch (game_status())
     {
     case GS_WIN:
         state = SRV_OVER;
         winner[0] = game_winner();
-        send_cat("WIN:", winner, ":", game_board(), (const char *)NULL);
+        send_cat("WIN:", winner, ":", game_board(), ai_tag, ai_cell, (const char *)NULL);
         break;
     case GS_DRAW:
         state = SRV_OVER;
-        send_cat("DRAW:", game_board(), (const char *)NULL);
+        send_cat("DRAW:", game_board(), ai_tag, ai_cell, (const char *)NULL);
         break;
     default:
-        send_cat("OK:BOARD:", game_board(), (const char *)NULL);
+        send_cat("OK:BOARD:", game_board(), ai_tag, ai_cell, (const char *)NULL);
         break;
     }
 }
@@ -110,9 +144,10 @@ void server_handle(const char *cmd)
     {
         if (state == SRV_IDLE) uart_send_line("OK"); else nack("BUSY");
     }
-    else if (strcmp(cmd, "NEW") == 0)
+    else if (strcmp(cmd, "NEW") == 0 || strcmp(cmd, "NEW:AI") == 0)
     {
         if (state == SRV_PLAY) { nack("BUSY"); return; }
+        vs_ai = (cmd[3] != '\0');
         game_reset();
         state = SRV_PLAY;
         send_cat("OK:BOARD:", game_board(), (const char *)NULL);
@@ -129,6 +164,13 @@ void server_handle(const char *cmd)
         send_cat("BOARD:", game_board(), ":", turn, ":",
                  (state == SRV_PLAY) ? "PLAY" : "OVER", (const char *)NULL);
     }
+    else if (strcmp(cmd, "HIST") == 0)
+    {
+        char count[2] = {0, 0};
+        if (state == SRV_IDLE) { nack("NOGAME"); return; }
+        count[0] = (char)('0' + game_move_count());
+        send_cat("HIST:", count, ":", game_history(), (const char *)NULL);
+    }
     else if (strcmp(cmd, "RESIGN") == 0)
     {
         if (state != SRV_PLAY) { nack("NOGAME"); return; }
@@ -139,6 +181,7 @@ void server_handle(const char *cmd)
     {
         game_reset();
         state = SRV_IDLE;
+        vs_ai = false;
         uart_send_line("OK");
     }
     else

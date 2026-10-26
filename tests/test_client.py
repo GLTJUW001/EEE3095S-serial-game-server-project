@@ -253,3 +253,34 @@ def test_connect_fails_cleanly_on_silence():
     c = GameClient(SerialLink(ScriptedTransport()))
     assert c.connect() is False
     assert c.mode == DISCONNECTED and "no reply" in c.message.lower()
+
+
+def test_parse_ai_reply_and_history_reply():
+    assert parse_reply("OK:BOARD:O...X....:AI:0") == (
+        "board_ok", ("O...X....", "0"))
+    assert parse_reply("WIN:O:OO.XX.X..:AI:2")[0] == "win"
+    assert parse_reply("HIST:2:X4O0") == ("history", ("2", "X4O0"))
+
+
+def test_ai_game_updates_board_and_history(client):
+    client.new_game(vs_ai=True)
+    assert client.mode == PLAYING and client.vs_ai is True
+    assert client.board == EMPTY
+
+    client.move(4)
+
+    assert client.mode == PLAYING
+    assert client.board[4] == "X"
+    assert client.board.count("X") == 1
+    assert client.board.count("O") == 1
+    assert len(client.history) == 2
+    assert client.history[0] == ("X", 4)
+    assert client.history[1][0] == "O"
+
+
+def test_history_is_cleared_when_new_game_starts(started):
+    started.move(4)
+    assert len(started.history) == 1
+    started.resign()
+    started.new_game()
+    assert started.history == []

@@ -13,6 +13,7 @@ It follows the same structure as the C code (parser.c / server.c / game.c):
 Replies carry no checksum. button_press() queues the unsolicited EVT:RESET.
 """
 
+import random
 import time
 
 from serial_link import MAX_FRAME
@@ -53,6 +54,8 @@ class FakeServer:
         self.winner = "-"
         self.moves = 0
         self.status = "PLAY"         # PLAY / WIN / DRAW
+        self.history = []             # successful moves as (mark, cell)
+        self.vs_ai = False
 
     def _game_move(self, mark, idx):
         """Return OK / OVER / NOTURN / RANGE / OCCUPIED; board written last."""
@@ -65,6 +68,7 @@ class FakeServer:
         if self.board[idx] != ".":
             return "OCCUPIED"
         self.board[idx] = self.turn
+        self.history.append((self.turn, idx))
         self.moves += 1
         for a, b, c in WIN_LINES:
             if self.board[a] == self.board[b] == self.board[c] == self.turn:
@@ -158,11 +162,12 @@ class FakeServer:
                 self._reply("OK")
             else:
                 self._nack("BUSY")
-        elif cmd == "NEW":
+        elif cmd in ("NEW", "NEW:AI"):
             if self.state == PLAY:
                 self._nack("BUSY")
                 return
             self._game_reset()
+            self.vs_ai = (cmd == "NEW:AI")
             self.state = PLAY
             self._reply("OK:BOARD:" + self._board_str())
         elif cmd.startswith("MOVE:"):
@@ -173,6 +178,12 @@ class FakeServer:
                 return
             turn = self.turn if self.state == PLAY else "-"
             self._reply("BOARD:%s:%s:%s" % (self._board_str(), turn, self.state))
+        elif cmd == "HIST":
+            if self.state == IDLE:
+                self._nack("NOGAME")
+                return
+            moves = "".join("%s%d" % (mark, idx) for mark, idx in self.history)
+            self._reply("HIST:%d:%s" % (len(self.history), moves))
         elif cmd == "RESIGN":
             if self.state != PLAY:
                 self._nack("NOGAME")
@@ -215,14 +226,25 @@ class FakeServer:
             self._nack({"NOTURN": "NOTURN", "RANGE": "RANGE",
                         "OCCUPIED": "OCCUPIED", "OVER": "NOGAME"}[result])
             return
+
+        # In AI mode, the human is X. The fake board chooses any empty cell,
+        # just like the intentionally simple firmware opponent.
+        ai_cell = None
+        if self.vs_ai and self.status == "PLAY":
+            empty = [i for i, cell in enumerate(self.board) if cell == "."]
+            if empty:
+                ai_cell = random.choice(empty)
+                self._game_move("O", ai_cell)
+
+        suffix = ":AI:%d" % ai_cell if ai_cell is not None else ""
         if self.status == "WIN":
             self.state = OVER
-            self._reply("WIN:%s:%s" % (self.winner, self._board_str()))
+            self._reply("WIN:%s:%s%s" % (self.winner, self._board_str(), suffix))
         elif self.status == "DRAW":
             self.state = OVER
-            self._reply("DRAW:" + self._board_str())
+            self._reply("DRAW:%s%s" % (self._board_str(), suffix))
         else:
-            self._reply("OK:BOARD:" + self._board_str())
+            self._reply("OK:BOARD:%s%s" % (self._board_str(), suffix))
 
     # -- transport interface ---------------------------------------------------------
     def transport(self):

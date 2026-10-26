@@ -59,6 +59,7 @@ static void process_frame(void)
         *star = '\0';
     }
 
+    server_set_time(last_byte_ms);
     server_handle(frame);
 }
 

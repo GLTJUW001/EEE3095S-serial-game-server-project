@@ -34,9 +34,10 @@ NACK_TEXT = {
 _B = "([.XO]{9})"
 _PATTERNS = [
     ("ok", re.compile(r"^OK$")),
-    ("board_ok", re.compile(r"^OK:BOARD:" + _B + "$")),
-    ("win", re.compile(r"^WIN:([XO]):" + _B + "$")),
-    ("draw", re.compile(r"^DRAW:" + _B + "$")),
+    ("board_ok", re.compile(r"^OK:BOARD:" + _B + r"(?::AI:([0-8]))?$")),
+    ("win", re.compile(r"^WIN:([XO]):" + _B + r"(?::AI:([0-8]))?$")),
+    ("draw", re.compile(r"^DRAW:" + _B + r"(?::AI:([0-8]))?$")),
+    ("history", re.compile(r"^HIST:([0-9]):((?:[XO][0-8]){0,9})$")),
     ("state", re.compile(r"^BOARD:" + _B + r":([XO-]):(PLAY|OVER)$")),
     ("gameover", re.compile(r"^OK:GAMEOVER$")),
     ("nack", re.compile(r"^NACK:([A-Z]+)$")),
@@ -78,6 +79,8 @@ class GameClient:
         self.result = None            # None, 'WIN', 'DRAW', 'RESIGNED', 'OVER'
         self.winner = None
         self.win_line = ()
+        self.vs_ai = False
+        self.history = []             # list of (mark, cell) pairs from the server
         self.message = "Not connected."
         self.level = "info"           # info / ok / warn / error
 
@@ -117,6 +120,30 @@ class GameClient:
         self.board, self.turn = EMPTY_BOARD, None
         self.result = self.winner = None
         self.win_line = ()
+        self.history = []
+        self.vs_ai = False
+
+    def refresh_history(self):
+        """Ask the server for the successful moves made in the current game."""
+        reply = self._ask("HIST")
+        if reply is None:
+            return False
+        kind, groups = parse_reply(reply)
+        if kind != "history":
+            if kind == "nack" and groups[0] == "NOGAME":
+                self.history = []
+                return False
+            self._say("Unexpected reply to HIST: %r" % reply, "error")
+            return False
+        count, moves = groups
+        parsed = []
+        for i in range(0, len(moves), 2):
+            parsed.append((moves[i], int(moves[i + 1])))
+        if len(parsed) != int(count):
+            self._say("Invalid move history returned by the board.", "error")
+            return False
+        self.history = parsed
+        return True
 
     # -- state updates (only ever called with a validated server reply) ---------
     def _apply_board(self, board, turn=None):
@@ -202,10 +229,12 @@ class GameClient:
                 self.result = self.winner = None
                 self.win_line = ()
                 self._apply_board(board, turn)
+                self.refresh_history()
             else:
                 winner = next((m for m in "XO" if _winning_line(board, m)), None)
                 result = "WIN" if winner else ("DRAW" if "." not in board else "OVER")
                 self._finish(board, result, winner)
+                self.refresh_history()
         elif kind == "nack" and g[0] == "NOGAME":
             self.mode = IDLE
             self._clear_game()
@@ -247,8 +276,9 @@ class GameClient:
             self._say("Unexpected reply to CONNECT: %r" % reply, "error")
         return False
 
-    def new_game(self):
-        reply = self._ask("NEW")
+    def new_game(self, vs_ai=False):
+        """Start a new game; vs_ai=True asks the STM32 to play O."""
+        reply = self._ask("NEW:AI" if vs_ai else "NEW")
         if reply is None:
             return
         kind, g = parse_reply(reply)
@@ -256,8 +286,10 @@ class GameClient:
             self.mode = PLAYING
             self.result = self.winner = None
             self.win_line = ()
+            self.vs_ai = bool(vs_ai)
+            self.history = []
             self._apply_board(g[0], "X")
-            self._say("New game. %s to move." % self.turn, "ok")
+            self._say("New game%s. %s to move." % (" against the computer" if vs_ai else "", self.turn), "ok")
         elif kind == "nack":
             if g[0] == "BUSY":
                 self._resync()          # our picture may be stale; show the truth
@@ -267,7 +299,7 @@ class GameClient:
             self._say("Unexpected reply to NEW: %r" % reply, "error")
 
     def move(self, index):
-        """Forward a move for the player whose turn the SERVER last told us it is."""
+        """Forward a move and adopt the board (including any AI reply) from the server."""
         mark = self.turn or "X"
         reply = self._ask("MOVE:%s:%s" % (mark, index))
         if reply is None:
@@ -276,12 +308,15 @@ class GameClient:
         if kind == "board_ok":
             self._apply_board(g[0])
             self._say("%s to move." % self.turn)
+            self.refresh_history()
         elif kind == "win":
             self._finish(g[1], "WIN", g[0])
             self._say("%s wins! Press New Game to play again." % g[0], "ok")
+            self.refresh_history()
         elif kind == "draw":
             self._finish(g[0], "DRAW")
             self._say("It's a draw. Press New Game to play again.", "ok")
+            self.refresh_history()
         elif kind == "nack":
             reason = g[0]
             if reason in ("NOGAME", "NOTURN"):

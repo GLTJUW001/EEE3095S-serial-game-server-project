@@ -234,3 +234,26 @@ def test_button_reset_sends_event_and_returns_to_idle(game):
     assert game.request("STATE") == "NACK:NOGAME"         # server is back in IDLE
     assert game.take_events() == ["EVT:RESET"]            # event queued, not mistaken for a reply
     assert game.request("CONNECT") == "OK"
+
+
+def test_ai_mode_makes_a_valid_computer_move(link):
+    assert link.request("CONNECT") == "OK"
+    assert link.request("NEW:AI") == "OK:BOARD:" + EMPTY
+
+    reply = link.request("MOVE:X:4")
+    assert reply.startswith("OK:BOARD:")
+    board_and_suffix = reply[len("OK:BOARD:"):]
+    board, ai_suffix = board_and_suffix.split(":AI:")
+    ai_cell = int(ai_suffix)
+    assert len(board) == 9
+    assert board[4] == "X"
+    assert board[ai_cell] == "O"
+    assert board.count("X") == 1 and board.count("O") == 1
+    assert link.request("HIST") == "HIST:2:X4O%d" % ai_cell
+
+
+def test_history_command_returns_successful_moves_only(game):
+    assert game.request("MOVE:X:4") == "OK:BOARD:....X...."
+    assert game.request("MOVE:O:4") == "NACK:OCCUPIED"
+    assert game.request("MOVE:O:0") == "OK:BOARD:O...X...."
+    assert game.request("HIST") == "HIST:2:X4O0"

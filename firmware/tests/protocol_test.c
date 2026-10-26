@@ -213,6 +213,96 @@ int main(void)
     expect("MOVE:4", "NACK:NOGAME");
     expect("NEW", "OK:BOARD:.........");
 
+    /* ---- history command ---- */
+    reset_all();
+    expect("HIST", "NACK:NOGAME");
+    expect("NEW", "OK:BOARD:.........");
+    expect("HIST", "HIST:0:");
+    expect("MOVE:4", "OK:BOARD:....X....");
+    expect("MOVE:4", "NACK:OCCUPIED");
+    expect("MOVE:0", "OK:BOARD:O...X....");
+    expect("HIST", "HIST:2:X4O0");                  /* rejected moves not recorded */
+    expect("RESIGN", "OK:GAMEOVER");
+    expect("HIST", "HIST:2:X4O0");                  /* kept after game over */
+    expect("NEW", "OK:BOARD:.........");
+    expect("HIST", "HIST:0:");                      /* cleared by a new game */
+    expect("DISCONNECT", "OK");
+    expect("HIST", "NACK:NOGAME");
+
+    /* ---- computer opponent ---- */
+    reset_all();
+    expect("NEW:AI", "OK:BOARD:.........");
+    expect("NEW:AI", "NACK:BUSY");
+    expect("NEW:XX", "NACK:BADCMD");
+    expect("MOVE:O:4", "NACK:NOTURN");               /* human is always X */
+    {
+        int games_won_by_o = 0, games_won_by_x = 0, draws = 0;
+        int seen_ai_cell[9] = {0};
+        for (int g = 0; g < 300; ++g)
+        {
+            char before[10], after[10], cmd[16], hist[32];
+            int over = 0;
+            expect("DISCONNECT", "OK");
+            clear(); feed("NEW:AI\n");
+            CHECK(nlines == 1 && strcmp(lines[0], "OK:BOARD:.........") == 0);
+            strcpy(before, ".........");
+            hist[0] = 0;
+            for (int turn = 0; turn < 9 && !over; ++turn)
+            {
+                /* human picks a pseudo-random empty cell */
+                int empties[9], ne = 0;
+                for (int i = 0; i < 9; ++i) if (before[i] == '.') empties[ne++] = i;
+                int h = empties[(g * 7 + turn * 3) % ne];
+                sprintf(cmd, "MOVE:X:%d", h);
+                clear(); feed(cmd); feed("\n");
+                CHECK(nlines == 1);
+                const char *r = lines[0];
+                int terminal = 0, ai_cell = -1;
+                const char *b;
+                if (strncmp(r, "OK:BOARD:", 9) == 0)      b = r + 9;
+                else if (strncmp(r, "WIN:", 4) == 0)      { b = r + 6; terminal = 1; }
+                else if (strncmp(r, "DRAW:", 5) == 0)     { b = r + 5; terminal = 1; }
+                else { printf("FAIL: unexpected reply %s\n", r); ++failures; break; }
+                memcpy(after, b, 9); after[9] = 0;
+                if (b[9] == ':') { CHECK(strncmp(b + 9, ":AI:", 4) == 0); ai_cell = b[13] - '0'; CHECK(b[14] == 0); }
+                else CHECK(b[9] == 0);
+
+                /* the board must differ from `before` ONLY at the human cell and the AI cell */
+                CHECK(before[h] == '.' && after[h] == 'X');
+                for (int i = 0; i < 9; ++i)
+                {
+                    if (i == h) continue;
+                    if (i == ai_cell) { CHECK(before[i] == '.' && after[i] == 'O'); }
+                    else              { CHECK(before[i] == after[i]); }
+                }
+                /* a non-terminal reply or an O win MUST include the computer's move */
+                if (strncmp(r, "OK:BOARD:", 9) == 0 || strncmp(r, "WIN:O", 5) == 0) CHECK(ai_cell >= 0);
+                if (ai_cell >= 0) seen_ai_cell[ai_cell]++;
+                sprintf(hist + strlen(hist), "X%d", h);
+                if (ai_cell >= 0) sprintf(hist + strlen(hist), "O%d", ai_cell);
+
+                if (terminal)
+                {
+                    over = 1;
+                    if (strncmp(r, "WIN:O", 5) == 0) ++games_won_by_o;
+                    else if (strncmp(r, "WIN:X", 5) == 0) ++games_won_by_x;
+                    else ++draws;
+                    /* a win by X must have no AI suffix; a draw/O-win may */
+                    if (strncmp(r, "WIN:X", 5) == 0) CHECK(ai_cell < 0);
+                }
+                memcpy(before, after, 10);
+            }
+            CHECK(over);
+            clear(); feed("HIST\n");                 /* history matches what we saw */
+            char want[48]; sprintf(want, "HIST:%d:%s", (int)(strlen(hist) / 2), hist);
+            CHECK(nlines == 1 && strcmp(lines[0], want) == 0);
+            expect("MOVE:X:0", "NACK:NOGAME");
+        }
+        CHECK(games_won_by_o > 0 && games_won_by_x > 0);     /* random play wins both ways */
+        for (int i = 0; i < 9; ++i) CHECK(seen_ai_cell[i] > 0);   /* AI uses every cell over time */
+        (void)draws;
+    }
+
     /* ---- fuzz: random bytes must never crash, and a clean command still works ---- */
     reset_all();
     {

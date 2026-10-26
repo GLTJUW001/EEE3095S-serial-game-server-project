@@ -1,34 +1,14 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
-#include <stdbool.h>
 
-typedef enum
-{
-    SRV_IDLE = 0,   /* waiting for CONNECT */
-    SRV_PLAY,       /* game in progress */
-    SRV_OVER        /* game finished (win / draw / resign) */
-} srv_state_t;
+typedef enum { SRV_IDLE = 0, SRV_PLAY, SRV_OVER } srv_state_t;
 
-/* Reset game and go to IDLE. */
-void server_init(void);
-
-/* Current server state. */
+void        server_init(void);
+void        server_handle(const char *cmd);   /* one validated, checksum-free command line */
+void        server_set_time(uint32_t now_ms); /* entropy for the computer opponent */
+void        server_button_reset(void);        /* local reset: IDLE + "EVT:RESET" */
 srv_state_t server_state(void);
 
-/* SW0 pressed: reset game, go to IDLE, emit EVT:RESET. */
-void server_button_reset(void);
-
-/* Handle one complete, validated command line (checksum already stripped). */
-void server_handle(const char *cmd);
-
-#ifdef __cplusplus
-}
 #endif
-
-#endif /* SERVER_H */
