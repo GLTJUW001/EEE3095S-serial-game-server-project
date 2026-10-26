@@ -244,6 +244,12 @@ class FakeTransport:
             return self.server._out.pop(0)
         return b""        # pyserial returns b"" when its timeout expires
 
+    @property
+    def in_waiting(self):
+        """Bytes ready to read, like pyserial's Serial.in_waiting."""
+        self.server.poll()
+        return sum(len(line) for line in self.server._out)
+
     def button_press(self):
         self.server.button_press()
 

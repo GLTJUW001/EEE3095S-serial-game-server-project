@@ -61,6 +61,7 @@ class SerialLink:
     def __init__(self, transport):
         self.transport = transport
         self.events = []          # unsolicited EVT: lines, oldest first
+        self.stray = []           # other lines that arrived with no request pending
 
     @classmethod
     def open_port(cls, port, baud=SERIAL_BAUD, timeout=REPLY_TIMEOUT):
@@ -105,6 +106,25 @@ class SerialLink:
         """Return and clear the queued unsolicited events."""
         events, self.events = self.events, []
         return events
+
+    def poll_events(self):
+        """Non-blocking check for unsolicited lines while no request is pending.
+
+        Only reads when the transport reports bytes waiting (pyserial's
+        in_waiting), so a GUI timer can call this without freezing. Returns and
+        clears the queued EVT: lines; any other stray line is kept in
+        self.stray for diagnostics.
+        """
+        while getattr(self.transport, "in_waiting", 0) > 0:
+            try:
+                text = decode_reply(self.read_raw())
+            except LinkTimeout:
+                break
+            if text.startswith(EVENT_PREFIX):
+                self.events.append(text)
+            else:
+                self.stray.append(text)
+        return self.take_events()
 
     # -- housekeeping ------------------------------------------------------
     def flush_input(self):
