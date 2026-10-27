@@ -11,7 +11,7 @@ line-based protocol.
  pytest harness (tests/)  <------------ same link ------------->  (or the Python fake server)
 ```
 
-Authors: Juwhin Goliath, Arseama Gebremicheal  |  Report: **TODO: link**  |  Demo video: **TODO: link**
+Authors: Juwhin Goliath, Arseama Gebremichael  |  Report: [docs/Report.pdf](docs/Report.pdf)  |  Demo video: [watch here](https://uctcloud-my.sharepoint.com/:f:/g/personal/gbrars001_myuct_ac_za/IgDBejbcy73dSpwEOb7HEPvaAWxst3mQ4_G_Wy7x9-m0Xso?e=uQ5Qcy)
 
 ## Repository layout
 
@@ -76,7 +76,7 @@ every accepted move of the current game.
 
 | Item | Behaviour |
 |---|---|
-| LCD | IDLE, whose turn it is with the board as `XOX|.O.|..X`, win/draw/resigned |
+| LCD | IDLE, whose turn it is with the board as `XOX\|.O.\|..X`, win/draw/resigned |
 | LED | on = X to move, off = O to move or idle, 2 Hz blink = game over |
 | SW0 button | debounced; resets the game to IDLE and sends the unsolicited line `EVT:RESET` |
 

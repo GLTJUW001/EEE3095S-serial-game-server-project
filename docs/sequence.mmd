@@ -1,0 +1,23 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, Helvetica, sans-serif", "fontSize": "15px", "primaryColor": "#ffffff", "primaryBorderColor": "#333333", "lineColor": "#333333", "primaryTextColor": "#111111", "actorBkg": "#ffffff", "actorBorder": "#333333", "noteBkgColor": "#fff8dc", "noteBorderColor": "#999999"}, "sequence": {"mirrorActors": false, "messageMargin": 26, "actorMargin": 60, "boxMargin": 4, "noteMargin": 4, "width": 150}}}%%
+sequenceDiagram
+    participant G as PC GUI
+    participant S as STM32 (IDLE)
+    G->>S: CONNECT
+    S-->>G: OK
+    G->>S: NEW
+    S-->>G: OK:BOARD:.........
+    Note over S: IN_PROGRESS
+    G->>S: MOVE:X:4
+    S-->>G: OK:BOARD:....X....
+    G->>S: MOVE:O:4
+    S-->>G: NACK:OCCUPIED
+    Note over G,S: state unchanged
+    Note over G,S: more moves omitted
+    G->>S: MOVE:X:6
+    S-->>G: WIN:X:O.XOX.X..
+    Note over S: GAME_OVER
+    G->>S: MOVE:O:1
+    S-->>G: NACK:NOGAME
+    G->>S: DISCONNECT
+    S-->>G: OK
+    Note over S: IDLE
