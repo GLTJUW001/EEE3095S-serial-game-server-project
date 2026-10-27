@@ -1,0 +1,50 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, Helvetica, sans-serif", "fontSize": "15px", "primaryColor": "#ffffff", "primaryBorderColor": "#333333", "lineColor": "#333333", "primaryTextColor": "#111111"}, "flowchart": {"curve": "linear", "nodeSpacing": 28, "rankSpacing": 38, "htmlLabels": true}}}%%
+flowchart TD
+    S([Start]) --> W["Show window: mode DISCONNECTED<br/>grid, New Game, Resign disabled<br/>start 150 ms poll timer"]
+    W --> E{{"Wait for event"}}
+
+    E -->|Connect| C1["Open serial port<br/>send CONNECT"]:::req
+    C1 --> C2{Reply?}
+    C2 -->|OK| C3["mode IDLE<br/>enable New Game"]:::state
+    C2 -->|NACK:BUSY| C4["send STATE, then HIST:<br/>resume the game<br/>already running"]:::req
+    C2 -->|"other reply,<br/>timeout,<br/>port error"| C5["show error,<br/>close port"]:::err
+
+    E -->|New Game| N1["Send NEW, or NEW:AI if<br/>'Vs computer' is selected"]:::req
+    N1 --> N2{Reply?}
+    N2 -->|OK:BOARD| N3["mode PLAYING, empty board<br/>X to move, history cleared"]:::state
+    N2 -->|NACK:BUSY| N4["send STATE, show<br/>'game in progress'"]:::err
+    N2 -->|other| N5["show error"]:::err
+
+    E -->|Cell clicked| M[["Move handling<br/>(Fig. 2)"]]
+
+    E -->|Resign| R1["Confirm, then send RESIGN<br/>(enabled only while PLAYING)"]:::req
+    R1 --> R2{Reply?}
+    R2 -->|OK:GAMEOVER| R3["mode OVER<br/>disable grid"]:::state
+    R2 -->|NACK| R4["show error<br/>(NOGAME: send STATE first)"]:::err
+
+    E -->|"Timer tick"| T1["Check port for<br/>unsolicited lines"]
+    T1 --> T2{EVT:RESET?}
+    T2 -->|yes| T3["mode IDLE, clear board<br/>and history,<br/>'board was reset'"]:::state
+    T2 -->|no| D
+
+    E -->|"Disconnect or<br/>close window"| X1["Send DISCONNECT,<br/>close port"]:::req
+    X1 --> X2["mode DISCONNECTED"]:::state
+    X2 --> X3{Window closing?}
+    X3 -->|yes| Z([Exit])
+    X3 -->|no| D
+
+    C3 --> D
+    C4 --> D
+    C5 --> D
+    N3 --> D
+    N4 --> D
+    N5 --> D
+    M --> D
+    R3 --> D
+    R4 --> D
+    T3 --> D
+    D["Redraw window from client state only:<br/>headline, message colour, X/O marks,<br/>move-history list, grid clickable<br/>only while PLAYING"] --> E
+
+    classDef req fill:#dbe9fb,stroke:#2b5c9e,color:#111;
+    classDef state fill:#dff3e0,stroke:#2e7d32,color:#111;
+    classDef err fill:#fbe0de,stroke:#b3261e,color:#111;

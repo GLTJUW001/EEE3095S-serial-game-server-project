@@ -1,0 +1,33 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, Helvetica, sans-serif", "fontSize": "15px", "primaryColor": "#ffffff", "primaryBorderColor": "#333333", "lineColor": "#333333", "primaryTextColor": "#111111"}, "flowchart": {"curve": "linear", "nodeSpacing": 24, "rankSpacing": 34, "htmlLabels": true}}}%%
+flowchart TD
+    A([Cell i clicked]) --> B["mark = player whose turn<br/>the server last confirmed"]
+    B --> C["Send MOVE:mark:i<br/>(GUI does not check legality)"]:::req
+    C --> D{Reply within 1 s?}
+    D -->|no| E1["timeout: show 'no reply',<br/>board unchanged<br/>port lost: mode DISCONNECTED"]:::err
+    D -->|yes| F{"Valid reply format?<br/>(optional :AI:c suffix)"}
+    F -->|no| E3["show 'unexpected reply'<br/>board unchanged"]:::err
+    F -->|yes| G{Reply type}
+
+    G -->|"OK:BOARD:b<br/>[:AI:c]"| H1["board = b (includes the<br/>computer's reply in AI games)<br/>turn from mark counts"]:::state
+    G -->|"WIN:m:b<br/>[:AI:c]"| H2["board = b, highlight line<br/>mode OVER, disable grid"]:::state
+    G -->|"DRAW:b<br/>[:AI:c]"| H3["board = b<br/>mode OVER, disable grid"]:::state
+    G -->|"NACK:OCCUPIED<br/>or RANGE"| H4["show specific message<br/>board unchanged"]:::err
+    G -->|"NACK:NOTURN<br/>or NOGAME"| H5["send STATE (and HIST): adopt<br/>server's board, turn, mode;<br/>show specific message"]:::err
+    G -->|"any other<br/>NACK"| H6["show the server's<br/>error text"]:::err
+
+    H1 --> HH
+    H2 --> HH
+    H3 --> HH
+    HH["Send HIST: replace the<br/>move-history list"]:::req
+
+    E1 --> Z
+    E3 --> Z
+    HH --> Z
+    H4 --> Z
+    H5 --> Z
+    H6 --> Z
+    Z(["Redraw window from client state<br/>(board only changes from a valid server reply)"])
+
+    classDef req fill:#dbe9fb,stroke:#2b5c9e,color:#111;
+    classDef state fill:#dff3e0,stroke:#2e7d32,color:#111;
+    classDef err fill:#fbe0de,stroke:#b3261e,color:#111;

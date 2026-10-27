@@ -11,7 +11,7 @@ line-based protocol.
  pytest harness (tests/)  <------------ same link ------------->  (or the Python fake server)
 ```
 
-Authors: **TODO: names**  |  Report: **TODO: link**  |  Demo video: **TODO: link**
+Authors: Juwhin Goliath, Arseama Gebremicheal  |  Report: **TODO: link**  |  Demo video: **TODO: link**
 
 ## Repository layout
 
@@ -47,6 +47,10 @@ python pc/gui.py --fake          # the GUI, talking to the fake server
 
 `--fake` adds a "Press SW0 (sim)" button that mimics the board's reset button.
 
+In the window, the **Mode** dropdown chooses *Two players* or *Vs computer* for the
+next game (it is locked while a game is running), and the **Move history** list shows
+every accepted move of the current game.
+
 ## Running with the board
 
 1. **Build and flash.** Open STM32CubeIDE, import the `firmware/` folder
@@ -73,7 +77,7 @@ python pc/gui.py --fake          # the GUI, talking to the fake server
 | Item | Behaviour |
 |---|---|
 | LCD | IDLE, whose turn it is with the board as `XOX|.O.|..X`, win/draw/resigned |
-| Green LED | on = X to move, off = O to move or idle, 2 Hz blink = game over |
+| LED | on = X to move, off = O to move or idle, 2 Hz blink = game over |
 | SW0 button | debounced; resets the game to IDLE and sends the unsolicited line `EVT:RESET` |
 
 ## Protocol summary
@@ -86,16 +90,28 @@ row-major, `.` empty, `X`, `O`. X always moves first.
 | Request | Reply |
 |---|---|
 | `CONNECT` | `OK` (idle) or `NACK:BUSY` |
-| `NEW` | `OK:BOARD:.........` or `NACK:BUSY` |
-| `MOVE:<M>:<i>` or `MOVE:<i>` | `OK:BOARD:<9>`, `WIN:<M>:<9>`, `DRAW:<9>`, or a `NACK:` below |
+| `NEW` | `OK:BOARD:.........` (two players) or `NACK:BUSY` |
+| `NEW:AI` | `OK:BOARD:.........` (you are X, the server plays O) or `NACK:BUSY` |
+| `MOVE:<M>:<i>` or `MOVE:<i>` | `OK:BOARD:<9>`, `WIN:<M>:<9>`, `DRAW:<9>`, or a `NACK:` below; in an AI game these may end in `:AI:<c>` |
 | `STATE` | `BOARD:<9>:<turn>:<PLAY\|OVER>` or `NACK:NOGAME` |
+| `HIST` | `HIST:<n>:<moves>`, e.g. `HIST:3:X4O0X8`, or `NACK:NOGAME` |
 | `RESIGN` | `OK:GAMEOVER` or `NACK:NOGAME` |
 | `DISCONNECT` | `OK` (from any state) |
+
+**Computer opponent.** In a `NEW:AI` game the human is always X (`MOVE:O:<i>` gives
+`NACK:NOTURN`). After each legal human move that does not end the game, the server
+picks a random empty cell, plays it through the same validation as any other move, and
+appends `:AI:<c>` (its cell) to the reply. The board in that reply already includes the
+computer's move. If the human's move ends the game there is no suffix.
+
+**History.** `<moves>` is two characters per move (mark, then cell) in play order,
+including computer moves. Rejected moves are never recorded. The history is kept
+after the game ends and cleared by `NEW`, `DISCONNECT` and the button reset.
 
 Errors: `NACK:OCCUPIED`, `RANGE`, `NOTURN`, `NOGAME`, `BUSY`, `BADCMD`, `CHECKSUM`,
 `OVERFLOW` (over 32 bytes), `TIMEOUT` (partial frame abandoned after 500 ms).
 Every rejected request leaves all game state unchanged. The full specification is
-in `docs/Protocol_Spec_v1.pdf`.
+in `docs/Protocol_Spec_v1.1.pdf`.
 
 ## Tests
 
